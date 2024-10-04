@@ -4,22 +4,40 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const asyncHandler = require('express-async-handler');
 const dotenv = require('dotenv');
+const multer = require('multer');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const cloudinary = require('cloudinary').v2; // Cloudinary's v2 version
 dotenv.config();
 
 const app = express();
-//?Middle wair
-app.use(cors({ origin: '*' }))
+
+// Middleware
+app.use(cors({ origin: '*' }));
 app.use(bodyParser.json());
-//? setting static folder path
+
+// Setting static folder paths
 app.use('/image/products', express.static('public/products'));
 app.use('/image/category', express.static('public/category'));
 app.use('/image/poster', express.static('public/posters'));
 
+// MongoDB Connection
 const URL = process.env.MONGO_URL;
-mongoose.connect(URL);
+mongoose.connect(URL, { useNewUrlParser: true, useUnifiedTopology: true });
 const db = mongoose.connection;
-db.on('error', (error) => console.error(error));
+db.on('error', (error) => console.error('Connection error:', error));
 db.once('open', () => console.log('Connected to Database'));
+
+// Configure Cloudinary
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+
+
+
+
 
 // Routes
 app.use('/categories', require('./routes/category'));
@@ -35,8 +53,7 @@ app.use('/orders', require('./routes/order'));
 app.use('/payment', require('./routes/payment'));
 app.use('/notification', require('./routes/notification'));
 
-
-// Example route using asyncHandler directly in app.js
+// Example route using asyncHandler
 app.get('/', asyncHandler(async (req, res) => {
     res.json({ success: true, message: 'API working successfully', data: null });
 }));
@@ -46,10 +63,7 @@ app.use((error, req, res, next) => {
     res.status(500).json({ success: false, message: error.message, data: null });
 });
 
-
-const port = process.env.PORT || 8000;
-
-app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
-});
+// Start the server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 

@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const Product = require('../model/product');
 const multer = require('multer');
-const { uploadProduct } = require('../uploadFile');
+const cloudinary = require('cloudinary').v2;
+
+const { uploadProduct } = require('../uploadFile.js');
 const asyncHandler = require('express-async-handler');
 
 // Get all products
@@ -41,7 +43,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
 
 
-// create new product
+// Create new product
 router.post('/', asyncHandler(async (req, res) => {
     try {
         // Execute the Multer middleware to handle multiple file fields
@@ -53,51 +55,50 @@ router.post('/', asyncHandler(async (req, res) => {
             { name: 'image5', maxCount: 1 }
         ])(req, res, async function (err) {
             if (err instanceof multer.MulterError) {
-                // Handle Multer errors, if any
+                // Handle Multer errors
                 if (err.code === 'LIMIT_FILE_SIZE') {
                     err.message = 'File size is too large. Maximum filesize is 5MB per image.';
                 }
-                console.log(`Add product: ${err}`);
                 return res.json({ success: false, message: err.message });
             } else if (err) {
-                // Handle other errors, if any
-                console.log(`Add product: ${err}`);
-                return res.json({ success: false, message: err });
+                return res.json({ success: false, message: err.message });
             }
 
-            // Extract product data from the request body
             const { name, description, quantity, price, offerPrice, proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId } = req.body;
 
-            // Check if any required fields are missing
             if (!name || !quantity || !price || !proCategoryId || !proSubCategoryId) {
                 return res.status(400).json({ success: false, message: "Required fields are missing." });
             }
 
-            // Initialize an array to store image URLs
             const imageUrls = [];
 
-            // Iterate over the file fields
-            const fields = ['image1', 'image2', 'image3', 'image4', 'image5'];
-            fields.forEach((field, index) => {
+            // Iterate over file fields, upload to Cloudinary and store the URLs
+            for (const field of ['image1', 'image2', 'image3', 'image4', 'image5']) {
                 if (req.files[field] && req.files[field].length > 0) {
                     const file = req.files[field][0];
-                    const imageUrl = `https://ecomserver-1-wcij.onrender.com/image/products/${file.filename}`;
-                    imageUrls.push({ image: index + 1, url: imageUrl });
+                    const uploadResult = await cloudinary.uploader.upload(file.path); // Upload to Cloudinary
+                    imageUrls.push({ image: index + 1, url: uploadResult.secure_url });
                 }
+            }
+
+            const newProduct = new Product({
+                name,
+                description,
+                quantity,
+                price,
+                offerPrice,
+                proCategoryId,
+                proSubCategoryId,
+                proBrandId,
+                proVariantTypeId,
+                proVariantId,
+                images: imageUrls
             });
 
-            // Create a new product object with data
-            const newProduct = new Product({ name, description, quantity, price, offerPrice, proCategoryId, proSubCategoryId, proBrandId,proVariantTypeId, proVariantId, images: imageUrls });
-
-            // Save the new product to the database
             await newProduct.save();
-
-            // Send a success response back to the client
-            res.json({ success: true, message: "Product created successfully.", data: null });
+            res.json({ success: true, message: "Product created successfully.", data: newProduct });
         });
     } catch (error) {
-        // Handle any errors that occur during the process
-        console.error("Error creating product:", error);
         res.status(500).json({ success: false, message: error.message });
     }
 }));
@@ -108,7 +109,6 @@ router.post('/', asyncHandler(async (req, res) => {
 router.put('/:id', asyncHandler(async (req, res) => {
     const productId = req.params.id;
     try {
-        // Execute the Multer middleware to handle file fields
         uploadProduct.fields([
             { name: 'image1', maxCount: 1 },
             { name: 'image2', maxCount: 1 },
@@ -117,19 +117,17 @@ router.put('/:id', asyncHandler(async (req, res) => {
             { name: 'image5', maxCount: 1 }
         ])(req, res, async function (err) {
             if (err) {
-                console.log(`Update product: ${err}`);
                 return res.status(500).json({ success: false, message: err.message });
             }
 
             const { name, description, quantity, price, offerPrice, proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId } = req.body;
 
-            // Find the product by ID
             const productToUpdate = await Product.findById(productId);
             if (!productToUpdate) {
                 return res.status(404).json({ success: false, message: "Product not found." });
             }
 
-            // Update product properties if provided
+            // Update product properties
             productToUpdate.name = name || productToUpdate.name;
             productToUpdate.description = description || productToUpdate.description;
             productToUpdate.quantity = quantity || productToUpdate.quantity;
@@ -141,29 +139,26 @@ router.put('/:id', asyncHandler(async (req, res) => {
             productToUpdate.proVariantTypeId = proVariantTypeId || productToUpdate.proVariantTypeId;
             productToUpdate.proVariantId = proVariantId || productToUpdate.proVariantId;
 
-            // Iterate over the file fields to update images
             const fields = ['image1', 'image2', 'image3', 'image4', 'image5'];
-            fields.forEach((field, index) => {
+            for (const [index, field] of fields.entries()) {
                 if (req.files[field] && req.files[field].length > 0) {
                     const file = req.files[field][0];
-                    const imageUrl = `https://ecomserver-1-wcij.onrender.com/image/products/${file.filename}`;
-                    // Update the specific image URL in the images array
-                    let imageEntry = productToUpdate.images.find(img => img.image === (index + 1));
+                    const uploadResult = await cloudinary.uploader.upload(file.path); // Upload to Cloudinary
+
+                    let imageEntry = productToUpdate.images.find(img => img.image === (index + 1)); // Match by index + 1
                     if (imageEntry) {
-                        imageEntry.url = imageUrl;
+                        imageEntry.url = uploadResult.secure_url;
                     } else {
-                        // If the image entry does not exist, add it
-                        productToUpdate.images.push({ image: index + 1, url: imageUrl });
+                        productToUpdate.images.push({ image: index + 1, url: uploadResult.secure_url });
                     }
                 }
-            });
+            }
 
             // Save the updated product
             await productToUpdate.save();
             res.json({ success: true, message: "Product updated successfully." });
         });
     } catch (error) {
-        console.error("Error updating product:", error);
         res.status(500).json({ success: false, message: error.message });
     }
 }));
@@ -172,14 +167,25 @@ router.put('/:id', asyncHandler(async (req, res) => {
 router.delete('/:id', asyncHandler(async (req, res) => {
     const productID = req.params.id;
     try {
-        const product = await Product.findByIdAndDelete(productID);
+        const product = await Product.findById(productID);
+        
         if (!product) {
             return res.status(404).json({ success: false, message: "Product not found." });
         }
-        res.json({ success: true, message: "Product deleted successfully." });
+
+        // Delete images from Cloudinary
+        for (const image of product.images) {
+            const publicId = image.url.split('/').pop().split('.')[0]; // Extract the public_id from the URL
+            await cloudinary.uploader.destroy(publicId); // Delete the image from Cloudinary
+        }
+
+        // Delete the product from the database
+        await Product.findByIdAndDelete(productID);
+
+        res.json({ success: true, message: "Product and associated images deleted successfully." });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 }));
 
-module.exports = router;  
+module.exports = router; 

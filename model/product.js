@@ -41,12 +41,8 @@ const productSchema = new mongoose.Schema({
     },
     proVariantId: [String],
     images: [{
-        image: {
-            type: Number,
-            required: true
-        },
         url: {
-            type: String,
+            type: String, // Store the image URL
             required: true
         }
     }]
